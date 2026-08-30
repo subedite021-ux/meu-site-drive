@@ -8,7 +8,7 @@ const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
 // ID da sua pasta do Google Drive (Cole o seu ID aqui entre as aspas)
-const FOLDER_ID = '1jHRAPNRA3-5hyy5CiJXLw3JZKgE5rVx1';
+const FOLDER_ID = '1EoRpXrN8PDJvrOzs-vlFljEOjV6oGGGT';
 
 function getDriveService() {
     if (!process.env.GOOGLE_CREDENTIALS) {
