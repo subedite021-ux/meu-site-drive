@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DN Curtanet</title>
+    <!-- SDK do Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Biblioteca Tus Client para Uploads Grandes com Progresso -->
+    <script src="https://cdn.jsdelivr.net/npm/tus-js-client@latest/dist/tus.js"></script>
+    <style>
+        :root {
+            --bg-body: #0f0c20;
+            --bg-card: rgba(22, 24, 34, 0.65);
+            --bg-sidebar: rgba(18, 20, 29, 0.75);
+            --bg-main: rgba(15, 17, 23, 0.5);
+            --bg-input: rgba(15, 17, 23, 0.7);
+            --border-color: rgba(255, 255, 255, 0.12);
+            --border-table: rgba(255, 255, 255, 0.08);
+            --text-main: #dbdee1;
+            --text-muted: #a3a8b4;
+            --text-white: #ffffff;
+            --accent-blue: #5865f2;
+            --accent-blue-hover: #4752c4;
+            --accent-green: #23a55a;
+        }
+
+        body.light-theme {
+            --bg-body: #e3e5e8;
+            --bg-card: rgba(255, 255, 255, 0.85);
+            --bg-sidebar: rgba(242, 243, 245, 0.85);
+            --bg-main: rgba(255, 255, 255, 0.6);
+            --bg-input: rgba(227, 229, 232, 0.8);
+            --border-color: rgba(0, 0, 0, 0.12);
+            --border-table: rgba(0, 0, 0, 0.08);
+            --text-main: #313338;
+            --text-muted: #5c5e66;
+            --text-white: #060607;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, sans-serif; }
+        
+        body { 
+            background: linear-gradient(-45deg, #0f0c20, #1a103c, #111a2e, #090a0f);
+            background-size: 400% 400%;
+            animation: gradientBG 12s ease infinite;
+            color: var(--text-main); 
+            height: 100vh; 
+            overflow: hidden; 
+            transition: color 0.3s ease; 
+        }
+
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes pulseGlow {
+            0% { box-shadow: 0 0 0 0 rgba(35, 165, 90, 0.7); }
+            70% { box-shadow: 0 0 0 8px rgba(35, 165, 90, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(35, 165, 90, 0); }
+        }
+
+        @keyframes slideInToast {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .bg-glow-1, .bg-glow-2 {
+            position: fixed;
+            width: 400px;
+            height: 400px;
+            border-radius: 50%;
+            filter: blur(120px);
+            opacity: 0.35;
+            pointer-events: none;
+            animation: floatGlow 8s ease-in-out infinite alternate;
+            z-index: 0;
+        }
+        .bg-glow-1 { background: #5865f2; top: 5%; left: 10%; }
+        .bg-glow-2 { background: #23a55a; bottom: 5%; right: 10%; animation-delay: -4s; }
+
+        @keyframes floatGlow {
+            0% { transform: translate(0, 0) scale(1); }
+            100% { transform: translate(30px, 40px) scale(1.2); }
+        }
+
+        #uploadProgressWidget {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 9999;
+            width: 320px;
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .upload-widget-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; font-weight: bold; color: var(--text-white); }
+        .upload-widget-filename { font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        .progress-bar-bg { width: 100%; height: 8px; background-color: var(--bg-input); border-radius: 10px; overflow: hidden; border: 1px solid var(--border-color); }
+        .progress-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #23a55a, #2dc96f); border-radius: 10px; transition: width 0.1s linear; }
+        .upload-status-text { font-size: 0.75rem; color: var(--accent-green); font-weight: bold; text-align: right; display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+
+        #toastContainer { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; }
+        .toast {
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--accent-blue);
+            color: var(--text-white);
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.4);
+            animation: slideInToast 0.3s ease-out forwards;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top: 2px solid var(--accent-blue); border-radius: 50%; animation: spin 0.8s linear infinite; }
+
+        #telaAuth {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            width: 100%;
+            position: relative;
+            z-index: 1;
+            perspective: 1000px;
+        }
+
+        .auth-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            width: 400px;
+            padding: 40px 35px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 30px rgba(88, 101, 242, 0.15);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            position: relative;
+            z-index: 2;
+            transition: transform 0.15s cubic-bezier(0.2, 0, 0.2, 1), box-shadow 0.3s ease;
+            transform-style: preserve-3d;
+        }
+
+        .auth-card:hover {
+            border-color: rgba(88, 101, 242, 0.4);
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.7), 0 0 40px rgba(88, 101, 242, 0.3);
+        }
+
+        .auth-title { font-size: 1.6rem; font-weight: 800; text-align: center; color: #ffffff; letter-spacing: 0.5px; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
+        .auth-sub { font-size: 0.85rem; color: #a3a8b4; text-align: center; margin-top: -12px; }
+
+        .btn-discord {
+            background: linear-gradient(135deg, #5865f2, #4752c4);
+            color: white; border: none; padding: 13px; border-radius: 10px; font-weight: 700; cursor: pointer; font-size: 0.95rem;
+            display: flex; align-items: center; justify-content: center; gap: 10px; transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(88, 101, 242, 0.35);
+        }
+        .btn-discord:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 8px 25px rgba(88, 101, 242, 0.6); filter: brightness(1.1); }
+
+        .divider { display: flex; align-items: center; text-align: center; color: #6c727f; font-size: 0.75rem; font-weight: 600; letter-spacing: 1px; }
+        .divider::before, .divider::after { content: ''; flex: 1; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+        .divider span { padding: 0 12px; }
+
+        .input-group { display: flex; flex-direction: column; gap: 8px; }
+        .input-group label { font-size: 0.8rem; color: #b5bac1; font-weight: 600; }
+
+        .auth-input {
+            background-color: var(--bg-input); border: 1px solid var(--border-color); border-radius: 10px; padding: 13px;
+            color: #ffffff; outline: none; font-size: 0.9rem; transition: all 0.3s ease;
+        }
+        .auth-input:focus { border-color: #5865f2; box-shadow: 0 0 15px rgba(88, 101, 242, 0.4); transform: translateY(-1px); }
+
+        .btn-auth {
+            background: linear-gradient(135deg, #5865f2, #3b46c4); color: white; border: none; padding: 13px; border-radius: 10px;
+            font-weight: 700; cursor: pointer; font-size: 0.95rem; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(88, 101, 242, 0.3); margin-top: 5px;
+        }
+        .btn-auth:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 8px 25px rgba(88, 101, 242, 0.5); background: linear-gradient(135deg, #6975f3, #4752c4); }
+
+        .switch-auth { font-size: 0.82rem; color: #949ba4; text-align: center; }
+        .switch-auth span { color: #00a8fc; cursor: pointer; font-weight: 700; transition: color 0.2s, text-shadow 0.2s; }
+        .switch-auth span:hover { color: #52c5ff; text-shadow: 0 0 8px rgba(0, 168, 252, 0.6); }
+
+        #telaPainel { display: none; height: 100vh; width: 100%; animation: fadeIn 0.3s ease-out; position: relative; z-index: 1; }
+        
+        .sidebar {
+            width: 260px;
+            background: var(--bg-sidebar);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: 25px 20px;
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .brand { font-size: 1.3rem; font-weight: 800; margin-bottom: 30px; color: var(--text-white); display: flex; align-items: center; gap: 10px; letter-spacing: 0.5px; }
+        .menu-list { display: flex; flex-direction: column; gap: 10px; }
+        
+        .menu-item {
+            padding: 12px 16px;
+            color: var(--text-main);
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 1px solid transparent;
+        }
+        .menu-item:hover { background: rgba(255, 255, 255, 0.05); color: var(--text-white); transform: translateX(4px); }
+        .menu-item.active { background: rgba(88, 101, 242, 0.2); border-color: rgba(88, 101, 242, 0.4); color: var(--text-white); box-shadow: 0 4px 15px rgba(88, 101, 242, 0.15); }
+        
+        .storage-box {
+            background: var(--bg-input);
+            padding: 14px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            margin-top: 20px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+        .storage-bar-bg { width: 100%; height: 8px; background: var(--border-color); border-radius: 10px; margin-top: 8px; overflow: hidden; }
+        .storage-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #2ea44f, #34d058); transition: width 0.4s ease; border-radius: 10px; }
+
+        .btn-theme { padding: 10px; background: var(--bg-input); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; font-weight: 700; width: 100%; margin-bottom: 10px; transition: all 0.2s; }
+        .btn-theme:hover { background: var(--border-color); transform: translateY(-1px); }
+
+        .btn-logout { padding: 10px; background: linear-gradient(135deg, #da373c, #a1282b); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 700; width: 100%; transition: all 0.2s; box-shadow: 0 4px 12px rgba(218, 55, 60, 0.3); }
+        .btn-logout:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(218, 55, 60, 0.5); }
+        
+        .main-content { flex: 1; display: flex; flex-direction: column; background: var(--bg-main); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); position: relative; }
+        .topbar-painel { padding: 20px 35px; display: flex; border-bottom: 1px solid var(--border-color); align-items: center; justify-content: space-between; gap: 20px; }
+        
+        .search-box { flex: 1; max-width: 380px; position: relative; }
+        .search-input {
+            width: 100%; background: var(--bg-input); border: 1px solid var(--border-color); padding: 11px 14px 11px 40px;
+            border-radius: 10px; color: var(--text-white); outline: none; font-size: 0.9rem; transition: all 0.3s ease;
+        }
+        .search-input:focus { border-color: var(--accent-blue); box-shadow: 0 0 15px rgba(88, 101, 242, 0.3); }
+        .search-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.9rem; }
+
+        .btn-upload {
+            background: linear-gradient(135deg, var(--accent-blue), #3b46c4); color: #fff; padding: 11px 24px;
+            border-radius: 10px; font-weight: 700; cursor: pointer; border: none; transition: all 0.3s ease;
+            display: inline-block; text-align: center; box-shadow: 0 4px 15px rgba(88, 101, 242, 0.3);
+        }
+        .btn-upload:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(88, 101, 242, 0.5); filter: brightness(1.1); }
+
+        .user-profile-box { display: flex; align-items: center; gap: 12px; background: var(--bg-input); padding: 6px 14px; border-radius: 30px; border: 1px solid var(--border-color); }
+        .user-avatar { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; border: 2px solid var(--accent-blue); display: none; }
+        .user-welcome { font-size: 0.88rem; color: var(--text-white); font-weight: 700; }
+
+        .file-section { padding: 35px; flex: 1; overflow-y: auto; position: relative; }
+        
+        .drop-zone-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(88, 101, 242, 0.25); backdrop-filter: blur(8px);
+            border: 2px dashed var(--accent-blue); display: none; justify-content: center; align-items: center; font-size: 1.3rem; font-weight: 800; color: var(--text-white); z-index: 100;
+        }
+
+        .file-table { width: 100%; border-collapse: separate; border-spacing: 0 8px; text-align: left; font-size: 0.9rem; }
+        .file-table th { color: var(--text-muted); padding: 0 16px 10px 16px; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 1px; }
+        
+        .file-table tbody tr {
+            background: var(--bg-card);
+            backdrop-filter: blur(10px);
+            transition: all 0.25s ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+        .file-table tbody tr:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3), 0 0 15px rgba(88, 101, 242, 0.2);
+            border-color: rgba(88, 101, 242, 0.4);
+        }
+
+        .file-table td { padding: 14px 16px; border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); }
+        .file-table td:first-child { border-left: 1px solid var(--border-color); border-top-left-radius: 10px; border-bottom-left-radius: 10px; }
+        .file-table td:last-child { border-right: 1px solid var(--border-color); border-top-right-radius: 10px; border-bottom-right-radius: 10px; }
+        
+        .action-cell { text-align: right; display: flex; justify-content: flex-end; gap: 14px; }
+        .action-icon { cursor: pointer; color: var(--text-muted); transition: all 0.2s; font-size: 1rem; }
+        .action-icon:hover { color: var(--text-white); transform: scale(1.25); }
+        .action-icon.delete:hover { color: #f23f43; }
+
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px); display: none; justify-content: center; align-items: center; z-index: 1000; }
+        .modal-card { background: var(--bg-card); backdrop-filter: blur(20px); border: 1px solid var(--border-color); border-radius: 16px; width: 450px; padding: 28px; box-shadow: 0 20px 50px rgba(0,0,0,0.6); display: flex; flex-direction: column; gap: 16px; animation: fadeIn 0.2s ease-out; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; color: var(--text-white); }
+        .modal-title { font-size: 1.15rem; font-weight: 800; }
+        .close-btn { cursor: pointer; color: var(--text-muted); font-size: 1.2rem; transition: color 0.2s; }
+        .close-btn:hover { color: var(--text-white); }
+        
+        .link-box { display: flex; gap: 10px; background-color: var(--bg-input); border: 1px solid var(--border-color); padding: 8px 12px; border-radius: 8px; overflow: hidden; }
+        .link-input { background: transparent; border: none; color: var(--text-muted); width: 100%; outline: none; font-size: 0.85rem; filter: blur(5px); transition: filter 0.3s ease, color 0.3s ease; cursor: pointer; user-select: none; }
+        .link-input:hover, .link-input:focus, .link-input.revealed { filter: blur(0px); color: var(--text-white); user-select: all; }
+        .btn-copy { background: linear-gradient(135deg, var(--accent-blue), #3b46c4); color: white; border: none; padding: 12px 18px; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 0.9rem; transition: all 0.2s; box-shadow: 0 4px 12px rgba(88, 101, 242, 0.3); }
+        .btn-copy:hover { transform: translateY(-1px); filter: brightness(1.1); }
+
+        #telaDownload { display: none; flex-direction: column; height: 100vh; width: 100%; position: relative; z-index: 1; animation: fadeIn 0.3s ease-out; perspective: 1000px; }
+        
+        .topbar-dn { height: 70px; background: var(--bg-sidebar); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); display: flex; align-items: center; justify-content: space-between; padding: 0 40px; border-bottom: 1px solid var(--border-color); }
+        .dn-logo-badge { display: flex; align-items: center; gap: 10px; font-weight: 800; color: var(--text-white); font-size: 1.2rem; letter-spacing: 0.5px; }
+        .discord-badge { display: flex; align-items: center; gap: 8px; background-color: var(--bg-input); padding: 7px 16px; border-radius: 20px; border: 1px solid var(--border-color); font-size: 0.85rem; color: var(--text-main); font-weight: 600; }
+
+        .main-container-dn { flex: 1; display: flex; justify-content: center; align-items: center; perspective: 1000px; }
+        
+        .download-card-dn {
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            width: 440px;
+            padding: 40px 35px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6), 0 0 35px rgba(88, 101, 242, 0.2);
+            transition: transform 0.15s cubic-bezier(0.2, 0, 0.2, 1), box-shadow 0.3s ease;
+            transform-style: preserve-3d;
+        }
+
+        .download-card-dn:hover {
+            border-color: rgba(88, 101, 242, 0.4);
+            box-shadow: 0 30px 70px rgba(0, 0, 0, 0.7), 0 0 45px rgba(88, 101, 242, 0.35);
+        }
+
+        .file-icon-box {
+            width: 85px; height: 85px;
+            background: linear-gradient(135deg, var(--accent-blue), #3b46c4);
+            border-radius: 22px; display: flex; align-items: center; justify-content: center;
+            font-size: 2.3rem; color: white; margin-bottom: 22px;
+            box-shadow: 0 10px 25px rgba(88, 101, 242, 0.4);
+        }
+        
+        .card-file-name { font-size: 1.3rem; font-weight: 800; margin-bottom: 6px; text-align: center; color: var(--text-white); word-break: break-all; }
+        .card-file-info { font-size: 0.88rem; color: var(--text-muted); margin-bottom: 30px; text-align: center; }
+
+        .btn-dn {
+            width: 100%; padding: 14px; border-radius: 10px; font-weight: 700; font-size: 0.95rem; cursor: pointer;
+            border: none; display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 14px; transition: all 0.3s ease;
+        }
+        .btn-dn-primary { background: linear-gradient(135deg, var(--accent-blue), #3b46c4); color: #ffffff; box-shadow: 0 4px 15px rgba(88, 101, 242, 0.35); }
+        .btn-dn-primary:hover { transform: translateY(-2px) scale(1.01); box-shadow: 0 8px 25px rgba(88, 101, 242, 0.6); filter: brightness(1.1); }
+        
+        .btn-dn-secondary { background-color: var(--bg-input); color: var(--text-main); border: 1px solid var(--border-color); margin-bottom: 0; }
+        .btn-dn-secondary:hover { transform: translateY(-2px); border-color: rgba(255, 255, 255, 0.25); color: var(--text-white); }
+
+        .discord-corner-widget {
+            position: fixed; bottom: 25px; right: 25px; background: var(--bg-card); backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color); border-radius: 14px; padding: 12px 18px; display: flex; align-items: center;
+            gap: 14px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); z-index: 10;
+        }
+        .widget-avatar { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; border: 2px solid var(--accent-blue); }
+        .widget-info { display: flex; flex-direction: column; justify-content: center; }
+        .widget-username { font-size: 0.9rem; font-weight: 700; color: var(--text-white); }
+        .widget-status { font-size: 0.78rem; display: flex; align-items: center; gap: 6px; color: var(--text-muted); }
+        .discord-status-dot { width: 9px; height: 9px; background-color: var(--accent-green); border-radius: 50%; animation: pulseGlow 2s infinite; }
+        .discord-status-dot.offline { background-color: #f23f43; animation: none; }
+    </style>
+</head>
+<body>
+
+    <div class="bg-glow-1"></div>
+    <div class="bg-glow-2"></div>
+
+    <div id="toastContainer"></div>
+
+    <div id="uploadProgressWidget">
+        <div class="upload-widget-header">
+            <span>Enviando arquivo...</span>
+            <span id="uploadPercent">0%</span>
+        </div>
+        <div class="upload-widget-filename" id="uploadFileName">arquivo.zip</div>
+        <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="uploadProgressBar"></div>
+        </div>
+        <div class="upload-status-text" id="uploadStatusText">
+            <div class="spinner" style="width:12px; height:12px; border-width:1.5px;"></div> Processando...
+        </div>
+    </div>
+
+    <div id="telaAuth">
+        <div class="auth-card" id="tiltCard">
+            <div class="auth-title" id="authTitle">Criar uma conta</div>
+            <div class="auth-sub" id="authSub">Insira seus dados para acessar DN Curtanet</div>
+            
+            <button class="btn-discord" onclick="loginComDiscord()">
+                <svg width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M13.545 2.907a13.227 13.227 0 0 0-3.257-1.011.05.05 0 0 0-.052.025c-.141.25-.297.577-.406.833a12.19 12.19 0 0 0-3.658 0 8.258 8.258 0 0 0-.412-.833.051.051 0 0 0-.052-.025c-1.125.194-2.22.534-3.257 1.011a.041.041 0 0 0-.021.018C.356 6.024-.213 9.047.066 12.032c.001.014.01.028.021.037a13.276 13.276 0 0 0 3.995 2.02.05.05 0 0 0 .056-.019c.308-.42.582-.863.818-1.329a.05.05 0 0 0-.01-.059.051.051 0 0 0-.018-.011 8.875 8.875 0 0 1-1.248-.595.05.05 0 0 1-.02-.066.051.051 0 0 1 .015-.019c.084-.063.168-.129.248-.195a.05.05 0 0 1 .051-.007c2.619 1.196 5.454 1.196 8.041 0a.05.05 0 0 1 .052.007c.08.066.164.132.248.195a.051.051 0 0 1-.004.085 8.254 8.254 0 0 1-1.249.594.05.05 0 0 0-.03.03.05.05 0 0 0 .003.041c.24.465.515.909.817 1.329a.05.05 0 0 0 .056.019 13.235 13.235 0 0 0 4.001-2.02.049.049 0 0 0 .021-.037c.334-3.451-.559-6.449-2.366-9.106a.034.034 0 0 0-.02-.019Zm-8.198 7.307c-.789 0-1.438-.724-1.438-1.612 0-.889.637-1.613 1.438-1.613.807 0 1.45.73 1.438 1.613 0 .888-.637 1.612-1.438 1.612Zm5.316 0c-.788 0-1.438-.724-1.438-1.612 0-.889.637-1.613 1.438-1.613.807 0 1.451.73 1.438 1.613 0 .888-.631 1.612-1.438 1.612Z"/></svg>
+                Conectar com Discord
+            </button>
+
+            <div class="divider"><span>OU</span></div>
+
+            <div class="input-group">
+                <label>Nome de Usuário</label>
+                <input type="text" id="authUsername" class="auth-input" placeholder="Ex: Player123">
+            </div>
+
+            <div class="input-group">
+                <label>Senha</label>
+                <input type="password" id="authPassword" class="auth-input" placeholder="••••••••">
+            </div>
+
+            <button class="btn-auth" id="btnSubmitAuth" onclick="processarAutenticacao()">Registrar</button>
+
+            <div class="switch-auth" id="switchAuth">
+                Já possui uma conta? <span onclick="alternarModoAuth()">Entrar</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="telaPainel">
+        <div class="sidebar">
+            <div>
+                <div class="brand">⚡ DN Curtanet</div>
+                <div class="menu-list">
+                    <div class="menu-item active" id="tabSamp" onclick="trocarAba('samp')">Arquivos SAMP</div>
+                    <div class="menu-item" id="tabSalvos" onclick="trocarAba('salvos')">Arquivos Salvados</div>
+                </div>
+
+                <div class="storage-box">
+                    <div class="storage-header">
+                        <span id="textoArmazenamento">Armazenamento 0 B / 200 GB</span>
+                    </div>
+                    <div class="storage-bar-bg">
+                        <div id="barraProgressoArmazenamento" class="storage-bar-fill"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <button class="btn-theme" onclick="alternarTema()">☀️ / 🌙 Mudar Tema</button>
+                <button class="btn-logout" onclick="fazerLogout()">Sair da Conta</button>
+            </div>
+        </div>
+
+        <div class="main-content" id="dropArea">
+            <div class="drop-zone-overlay" id="dropZoneOverlay">
+                📥 Solte o arquivo aqui para enviar
+            </div>
+
+            <div class="topbar-painel">
+                <div class="search-box">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="searchInput" class="search-input" placeholder="Buscar arquivos pelo nome..." oninput="filtrarArquivos()">
+                </div>
+
+                <label for="fileUpload" class="btn-upload" id="labelUpload">↑ Upload</label>
+                <input type="file" id="fileUpload" style="display: none;">
+                
+                <div class="user-profile-box">
+                    <img id="userAvatar" class="user-avatar" alt="Avatar">
+                    <span class="user-welcome" id="userWelcome"></span>
+                </div>
+            </div>
+
+            <div class="file-section">
+                <table class="file-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 30px;"><input type="checkbox" id="selectAllCheckbox" onclick="selecionarTodos(this)"></th>
+                            <th>Nome</th>
+                            <th>Data</th>
+                            <th>Origem</th>
+                            <th>Downloads</th>
+                            <th>Tamanho</th>
+                            <th style="width: 100px; text-align: right;">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="fileTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="modal-overlay" id="modalOverlay">
+            <div class="modal-card">
+                <div class="modal-header">
+                    <span class="modal-title">Obter link de compartilhamento</span>
+                    <span class="close-btn" onclick="fecharModal()">✕</span>
+                </div>
+                <p style="font-size: 0.85rem; color: var(--text-muted);">Passe o mouse ou clique no link para visualizá-lo.</p>
+                <div class="link-box">
+                    <input type="text" class="link-input" id="linkField" readonly onclick="revelarLink(this)">
+                </div>
+                <button class="btn-copy" id="btnCopy" onclick="copiarLinkDoCampo()">Copiar link</button>
+            </div>
+        </div>
+
+        <div class="modal-overlay" id="modalPreviewOverlay">
+            <div class="modal-card">
+                <div class="modal-header">
+                    <span class="modal-title">Detalhes do Arquivo</span>
+                    <span class="close-btn" onclick="fecharModalPreview()">✕</span>
+                </div>
+                <div style="display: flex; flex-direction: column; align-items: center; gap: 12px; margin: 10px 0;">
+                    <div class="file-icon-box" id="previewIcon" style="width:60px; height:60px; font-size:1.8rem; margin:0;">📁</div>
+                    <div style="font-weight: 800; color: var(--text-white); font-size: 1.1rem;" id="previewName">nome.zip</div>
+                    <div style="font-size: 0.85rem; color: var(--text-muted); text-align: center;" id="previewDetails">Tamanho: 0 B | Enviado em: --</div>
+                </div>
+                <button class="btn-copy" onclick="fecharModalPreview()">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="telaDownload">
+        <div class="topbar-dn">
+            <div class="dn-logo-badge">⚡ DN Curtanet</div>
+            <div class="discord-badge">
+                <svg width="16" height="16" fill="#5865F2" viewBox="0 0 16 16"><path d="M13.545 2.907a13.227 13.227 0 0 0-3.257-1.011.05.05 0 0 0-.052.025c-.141.25-.297.577-.406.833a12.19 12.19 0 0 0-3.658 0 8.258 8.258 0 0 0-.412-.833.051.051 0 0 0-.052-.025c-1.125.194-2.22.534-3.257 1.011a.041.041 0 0 0-.021.018C.356 6.024-.213 9.047.066 12.032c.001.014.01.028.021.037a13.276 13.276 0 0 0 3.995 2.02.05.05 0 0 0 .056-.019c.308-.42.582-.863.818-1.329a.05.05 0 0 0-.01-.059.051.051 0 0 0-.018-.011 8.875 8.875 0 0 1-1.248-.595.05.05 0 0 1-.02-.066.051.051 0 0 1 .015-.019c.084-.063.168-.129.248-.195a.05.05 0 0 1 .051-.007c2.619 1.196 5.454 1.196 8.041 0a.05.05 0 0 1 .052.007c.08.066.164.132.248.195a.051.051 0 0 1-.004.085 8.254 8.254 0 0 1-1.249.594.05.05 0 0 0-.03.03.05.05 0 0 0 .003.041c.24.465.515.909.817 1.329a.05.05 0 0 0 .056.019 13.235 13.235 0 0 0 4.001-2.02.049.049 0 0 0 .021-.037c.334-3.451-.559-6.449-2.366-9.106a.034.034 0 0 0-.02-.019Zm-8.198 7.307c-.789 0-1.438-.724-1.438-1.612 0-.889.637-1.613 1.438-1.613.807 0 1.45.73 1.438 1.613 0 .888-.637 1.612-1.438 1.612Zm5.316 0c-.788 0-1.438-.724-1.438-1.612 0-.889.637-1.613 1.438-1.613.807 0 1.451.73 1.438 1.613 0 .888-.631 1.612-1.438 1.612Z"/></svg>
+                <span>Servidor Verificado</span>
+            </div>
+        </div>
+
+        <div class="main-container-dn" id="containerDownloadTilt">
+            <div class="download-card-dn" id="cardDownloadTilt">
+                <div class="file-icon-box" id="downloadCardIcon">📁</div>
+                <div class="card-file-name" id="cardFileName">cacmods.asi</div>
+                <div class="card-file-info" id="cardFileInfo">0.62 MB • Compartilhado via DN Curtanet</div>
+
+                <button class="btn-dn btn-dn-primary" onclick="fazerDownload()">
+                    ↓ Fazer Download
+                </button>
+                <button class="btn-dn btn-dn-secondary" id="btnSalvarDN" onclick="salvarNaDNCloud()">
+                    ☁ Salvar no DN Curtanet
+                </button>
+            </div>
+        </div>
+
+        <div class="discord-corner-widget">
+            <img id="widgetUserAvatar" class="widget-avatar" src="https://cdn.discordapp.com/embed/avatars/0.png" alt="Avatar">
+            <div class="widget-info">
+                <span class="widget-username" id="widgetUsername">Visitante</span>
+                <div class="widget-status">
+                    <div class="discord-status-dot offline" id="widgetStatusDot"></div>
+                    <span id="widgetStatusText">Não conectado</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // CONFIGURAÇÃO DO SUPABASE
+        const SUPABASE_URL = 'https://gexqfhmiyvghsujtfqcm.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_c6swZRFIGkIYMROn_PxXXw_e5_5XYiq';
+        const PROJECT_ID = 'gexqfhmiyvghsujtfqcm';
+        const BUCKET_NAME = 'downloads';
+        
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        const CLIENT_ID = '1536030259542106212';
+        const GUILD_ID_ADM = 'COLOQUE_AQUI_O_ID_DO_SERVIDOR_DA_ADM';
+        const REDIRECT_URI = window.location.origin + window.location.pathname;
+
+        const params = new URLSearchParams(window.location.search);
+        const isDownloadScreen = params.get('download') === '1';
+
+        let modoRegistro = true;
+        let abaAtual = 'samp';
+        let estaFazendoUpload = false;
+
+        function aplicarEfeitoTilt(idContainer, idCard) {
+            const container = document.getElementById(idContainer);
+            const card = document.getElementById(idCard);
+
+            if (container && card) {
+                container.addEventListener('mousemove', (e) => {
+                    const rect = card.getBoundingClientRect();
+                    const x = e.clientX - rect.left - rect.width / 2;
+                    const y = e.clientY - rect.top - rect.height / 2;
+                    
+                    const rotateX = (-y / 20).toFixed(2);
+                    const rotateY = (x / 20).toFixed(2);
+
+                    card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+                });
+
+                container.addEventListener('mouseleave', () => {
+                    card.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg)';
+                });
+            }
+        }
+
+        aplicarEfeitoTilt('telaAuth', 'tiltCard');
+        aplicarEfeitoTilt('containerDownloadTilt', 'cardDownloadTilt');
+
+        function obterIconeArquivo(nomeArquivo) {
+            if (!nomeArquivo) return '📁';
+            const ext = nomeArquivo.split('.').pop().toLowerCase();
+            switch (ext) {
+                case 'zip': case 'rar': case '7z': return '📦';
+                case 'png': case 'jpg': case 'jpeg': case 'gif': return '🖼️';
+                case 'mp4': case 'mkv': case 'avi': return '🎥';
+                case 'mp3': case 'wav': return '🎵';
+                case 'lua': case 'asi': case 'cs': case 'dll': return '⚙️';
+                case 'txt': case 'pdf': case 'doc': return '📄';
+                default: return '📁';
+            }
+        }
+
+        function formatarTamanhoArquivo(bytes) {
+            if (!bytes || isNaN(bytes) || bytes <= 0) return '0 B';
+            const k = 1024;
+            const tamanhos = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + tamanhos[i];
+        }
+
+        function showToast(mensagem, icone = '🔔', comSpinner = false) {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            
+            const iconeHTML = comSpinner ? `<div class="spinner"></div>` : `<span>${icone}</span>`;
+            toast.innerHTML = `${iconeHTML} <span>${mensagem}</span>`;
+            
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                toast.style.transition = 'all 0.3s ease-out';
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        }
+
+        function alternarTema() {
+            document.body.classList.toggle('light-theme');
+            const ehLight = document.body.classList.contains('light-theme');
+            localStorage.setItem('tema_preferido', ehLight ? 'light' : 'dark');
+        }
+
+        window.onload = function() {
+            if (localStorage.getItem('tema_preferido') === 'light') {
+                document.body.classList.add('light-theme');
+            }
+
+            const hash = window.location.hash.substring(1);
+            const hashParams = new URLSearchParams(hash);
+            const accessToken = hashParams.get('access_token');
+
+            if (accessToken) {
+                window.history.replaceState({}, document.title, window.location.pathname);
+                obterPerfilDiscord(accessToken);
+                return;
+            }
+
+            const usuarioSessao = JSON.parse(localStorage.getItem('usuario_sessao') || 'null');
+
+            if (isDownloadScreen) {
+                document.getElementById('telaAuth').style.display = 'none';
+                document.getElementById('telaPainel').style.display = 'none';
+                document.getElementById('telaDownload').style.display = 'flex';
+
+                const fileName = params.get('name') || 'arquivo.rar';
+                const fileSize = params.get('size') || '0 MB';
+
+                document.getElementById('cardFileName').textContent = fileName;
+                document.getElementById('cardFileInfo').textContent = `${fileSize} • Compartilhado via DN Curtanet`;
+                document.getElementById('downloadCardIcon').textContent = obterIconeArquivo(fileName);
+
+                if (usuarioSessao) {
+                    atualizarWidgetDiscord(usuarioSessao);
+                }
+                return;
+            }
+
+            if (usuarioSessao) {
+                mostrarPainel(usuarioSessao.username, usuarioSessao.avatar);
+            }
+
+            configurarDragAndDrop();
+        };
+
+        function loginComDiscord() {
+            const discordUrl = `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=token&scope=identify%20guilds`;
+            window.location.href = discordUrl;
+        }
+
+        async function obterPerfilDiscord(token) {
+            try {
+                const resUser = await fetch('https://discord.com/api/users/@me', { headers: { authorization: `Bearer ${token}` } });
+                const user = await resUser.json();
+
+                const resGuilds = await fetch('https://discord.com/api/users/@me/guilds', { headers: { authorization: `Bearer ${token}` } });
+                const guilds = await resGuilds.json();
+
+                if (user.id) {
+                    const avatarUrl = user.avatar 
+                        ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png`
+                        : `https://cdn.discordapp.com/embed/avatars/${user.discriminator % 5}.png`;
+
+                    const estaNoServidorADM = Array.isArray(guilds) && guilds.some(g => g.id === GUILD_ID_ADM);
+
+                    const dadosUsuario = { id: user.id, username: user.global_name || user.username, avatar: avatarUrl, noServidorADM: estaNoServidorADM };
+                    localStorage.setItem('usuario_sessao', JSON.stringify(dadosUsuario));
+                    showToast(`Conectado como ${dadosUsuario.username}!`, '⚡');
+                    
+                    if (isDownloadScreen) {
+                        atualizarWidgetDiscord(dadosUsuario);
+                    } else {
+                        mostrarPainel(dadosUsuario.username, dadosUsuario.avatar);
+                    }
+                }
+            } catch (err) {
+                showToast('Erro ao vincular conta com o Discord.', '❌');
+            }
+        }
+
+        function atualizarWidgetDiscord(dados) {
+            if (!dados) return;
+            const avatarElem = document.getElementById('widgetUserAvatar');
+            const usernameElem = document.getElementById('widgetUsername');
+            const statusTextElem = document.getElementById('widgetStatusText');
+            const statusDotElem = document.getElementById('widgetStatusDot');
+
+            if (dados.avatar) avatarElem.src = dados.avatar;
+            if (dados.username) usernameElem.textContent = dados.username;
+
+            if (dados.noServidorADM) {
+                statusTextElem.textContent = 'Membro Servidor ADM';
+                statusTextElem.style.color = '#23a55a';
+                statusDotElem.className = 'discord-status-dot';
+            } else {
+                statusTextElem.textContent = 'Fora do Servidor ADM';
+                statusTextElem.style.color = '#f23f43';
+                statusDotElem.className = 'discord-status-dot offline';
+            }
+        }
+
+        function alternarModoAuth() {
+            modoRegistro = !modoRegistro;
+            document.getElementById('authTitle').textContent = modoRegistro ? "Criar uma conta" : "Acessar Conta";
+            document.getElementById('btnSubmitAuth').textContent = modoRegistro ? "Registrar" : "Entrar";
+            document.getElementById('switchAuth').innerHTML = modoRegistro 
+                ? 'Já possui uma conta? <span onclick="alternarModoAuth()">Entrar</span>' 
+                : 'Ainda não tem conta? <span onclick="alternarModoAuth()">Registre-se</span>';
+        }
+
+        function processarAutenticacao() {
+            const user = document.getElementById('authUsername').value.trim();
+            const pass = document.getElementById('authPassword').value.trim();
+
+            if (!user || !pass) return showToast('Preencha o usuário e a senha.', '⚠️');
+
+            const contasSalvas = JSON.parse(localStorage.getItem('contas_usuarios') || '{}');
+
+            if (modoRegistro) {
+                if (contasSalvas[user]) return showToast('Este usuário já existe!', '⚠️');
+                contasSalvas[user] = pass;
+                localStorage.setItem('contas_usuarios', JSON.stringify(contasSalvas));
+                
+                const dadosUsuario = { username: user, avatar: null, noServidorADM: false };
+                localStorage.setItem('usuario_sessao', JSON.stringify(dadosUsuario));
+                showToast('Conta registrada com sucesso!', '✨');
+                mostrarPainel(user, null);
+            } else {
+                if (!contasSalvas[user] || contasSalvas[user] !== pass) return showToast('Usuário ou senha incorretos.', '❌');
+                const dadosUsuario = { username: user, avatar: null, noServidorADM: false };
+                localStorage.setItem('usuario_sessao', JSON.stringify(dadosUsuario));
+                showToast(`Bem-vindo de volta, ${user}!`, '👋');
+                mostrarPainel(user, null);
+            }
+        }
+
+        function mostrarPainel(usuario, avatar) {
+            document.getElementById('telaAuth').style.display = 'none';
+            document.getElementById('telaPainel').style.display = 'flex';
+            document.getElementById('userWelcome').textContent = usuario;
+
+            const imgElement = document.getElementById('userAvatar');
+            if (avatar) {
+                imgElement.src = avatar;
+                imgElement.style.display = 'block';
+            } else {
+                imgElement.style.display = 'none';
+            }
+
+            carregarArquivosDaAba();
+            atualizarBarraArmazenamento();
+        }
+
+        function trocarAba(aba) {
+            abaAtual = aba;
+            document.getElementById('tabSamp').classList.toggle('active', aba === 'samp');
+            document.getElementById('tabSalvos').classList.toggle('active', aba === 'salvos');
+            document.getElementById('labelUpload').style.display = aba === 'salvos' ? 'none' : 'inline-block';
+            carregarArquivosDaAba();
+        }
+
+        async function carregarArquivosDaAba() {
+            const tableBody = document.getElementById('fileTableBody');
+            tableBody.innerHTML = '';
+
+            const tabelaSupabase = abaAtual === 'samp' ? 'arquivos' : 'arquivos_salvos';
+            
+            const { data: lista, error } = await supabaseClient.from(tabelaSupabase).select('*');
+            
+            if (error) {
+                console.error("Erro ao buscar arquivos:", error);
+                return;
+            }
+
+            if (!lista) return;
+
+            lista.forEach(item => {
+                const nomeValido = item.name || item.nome || 'Sem Nome';
+                const icone = obterIconeArquivo(nomeValido);
+                const downloads = item.downloads || 0;
+                const tamFormatado = formatarTamanhoArquivo(item.size_bytes || item.tamanho);
+                const dataExibicao = item.date || '---';
+                const origemExibicao = item.origin || 'DN Curtanet';
+                const chaveValida = item.file_key || item.id;
+                const directUrl = item.url || '';
+
+                const novaLinha = document.createElement('tr');
+                novaLinha.innerHTML = `
+                    <td><input type="checkbox" class="row-checkbox"></td>
+                    <td style="font-weight:700; color:var(--text-white);">${icone} ${nomeValido}</td>
+                    <td>${dataExibicao}</td>
+                    <td>${origemExibicao}</td>
+                    <td>📥 ${downloads}</td>
+                    <td>${tamFormatado}</td>
+                    <td class="action-cell">
+                        <span class="action-icon" title="Visualizar Detalhes" onclick="abrirPreview('${nomeValido}', '${tamFormatado}', '${dataExibicao}')">👁️</span>
+                        <span class="action-icon" title="Obter Link" onclick="abrirModalLink('${nomeValido}', '${tamFormatado}', '${chaveValida}', '${encodeURIComponent(directUrl)}')">🔗</span>
+                        <span class="action-icon delete" title="Excluir" onclick="excluirArquivo('${chaveValida}', '${item.storage_path}')">🗑️</span>
+                    </td>
+                `;
+                tableBody.appendChild(novaLinha);
+            });
+        }
+
+        function selecionarTodos(master) {
+            const checkboxes = document.querySelectorAll('.row-checkbox');
+            checkboxes.forEach(cb => cb.checked = master.checked);
+        }
+
+        function abrirPreview(nome, tamanho, data) {
+            document.getElementById('previewName').textContent = nome;
+            document.getElementById('previewIcon').textContent = obterIconeArquivo(nome);
+            document.getElementById('previewDetails').textContent = `Tamanho: ${tamanho} | Registrado em: ${data}`;
+            document.getElementById('modalPreviewOverlay').style.display = 'flex';
+        }
+
+        function fecharModalPreview() {
+            document.getElementById('modalPreviewOverlay').style.display = 'none';
+        }
+
+        function filtrarArquivos() {
+            const termo = document.getElementById('searchInput').value.toLowerCase();
+            const linhas = document.querySelectorAll('#fileTableBody tr');
+
+            linhas.forEach(linha => {
+                const nomeArquivo = linha.children[1].textContent.toLowerCase();
+                linha.style.display = nomeArquivo.includes(termo) ? '' : 'none';
+            });
+        }
+
+        async function atualizarBarraArmazenamento() {
+            const usuarioSessao = JSON.parse(localStorage.getItem('usuario_sessao') || '{}');
+            
+            const ehDono = usuarioSessao.id === "1454142997036793950" || 
+                           usuarioSessao.ehDono === true || 
+                           usuarioSessao.cargo === 'ADM' ||
+                           (usuarioSessao.username && usuarioSessao.username.toLowerCase().includes('dn'));
+
+            const { data: listaSamp } = await supabaseClient.from('arquivos').select('size_bytes, tamanho');
+            let totalBytesUsados = 0;
+
+            if (listaSamp) {
+                listaSamp.forEach(arquivo => {
+                    totalBytesUsados += Number(arquivo.size_bytes) || 0;
+                });
+            }
+
+            const elemTexto = document.getElementById('textoArmazenamento');
+            const elemBarra = document.getElementById('barraProgressoArmazenamento');
+
+            if (ehDono) {
+                if (elemTexto) elemTexto.textContent = `Armazenamento ${formatarTamanhoArquivo(totalBytesUsados)} / Ilimitado`;
+                if (elemBarra) elemBarra.style.width = '100%';
+            } else {
+                const LIMITE_200GB_BYTES = 200 * 1024 * 1024 * 1024;
+                let porcentagemUsada = (totalBytesUsados / LIMITE_200GB_BYTES) * 100;
+                
+                if (totalBytesUsados > 0 && porcentagemUsada < 1) porcentagemUsada = 1;
+                porcentagemUsada = Math.min(porcentagemUsada, 100);
+
+                if (elemTexto) elemTexto.textContent = `Armazenamento ${formatarTamanhoArquivo(totalBytesUsados)} / 200 GB`;
+                if (elemBarra) elemBarra.style.width = `${porcentagemUsada.toFixed(1)}%`;
+            }
+        }
+
+        async function excluirArquivo(key, storagePath) {
+            if (!confirm('Deseja excluir este arquivo?')) return;
+
+            const tabelaSupabase = abaAtual === 'samp' ? 'arquivos' : 'arquivos_salvos';
+
+            await supabaseClient.from(tabelaSupabase).delete().eq('file_key', key);
+
+            if (storagePath) {
+                await supabaseClient.storage.from(BUCKET_NAME).remove([storagePath]);
+            }
+
+            showToast('Arquivo excluído com sucesso.', '🗑️');
+            carregarArquivosDaAba();
+            atualizarBarraArmazenamento();
+        }
+
+        function fazerLogout() {
+            localStorage.removeItem('usuario_sessao');
+            location.reload();
+        }
+
+        const fileInput = document.getElementById('fileUpload');
+
+        function configurarDragAndDrop() {
+            const dropArea = document.getElementById('dropArea');
+            const overlay = document.getElementById('dropZoneOverlay');
+
+            if (!dropArea || !overlay) return;
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropArea.addEventListener(eventName, (e) => { e.preventDefault(); overlay.style.display = 'flex'; }, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, (e) => { e.preventDefault(); overlay.style.display = 'none'; }, false);
+            });
+
+            dropArea.addEventListener('drop', (e) => {
+                const files = e.dataTransfer.files;
+                if (files.length) processarArquivoUpload(files[0]);
+            });
+        }
+
+        if (fileInput) {
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files[0]) processarArquivoUpload(e.target.files[0]);
+            });
+        }
+
+        async function processarArquivoUpload(file) {
+            estaFazendoUpload = true;
+
+            const progressWidget = document.getElementById('uploadProgressWidget');
+            const progressBar = document.getElementById('uploadProgressBar');
+            const percentText = document.getElementById('uploadPercent');
+            const fileNameText = document.getElementById('uploadFileName');
+            const statusText = document.getElementById('uploadStatusText');
+
+            const tamanhoFormatado = formatarTamanhoArquivo(file.size);
+            fileNameText.textContent = `${file.name} (${tamanhoFormatado})`;
+            progressBar.style.width = '0%';
+            percentText.textContent = '0%';
+            statusText.innerHTML = `<div class="spinner" style="width:12px; height:12px; border-width:1.5px;"></div> Conectando...`;
+            progressWidget.style.display = 'flex';
+
+            const fileKey = 'file_' + Date.now();
+            const storagePath = `${fileKey}_${file.name}`;
+            const startTime = Date.now();
+
+            var upload = new tus.Upload(file, {
+                endpoint: `https://${PROJECT_ID}.storage.supabase.co/storage/v1/upload/resumable`,
+                retryDelays: [0, 3000, 5000, 10000, 20000],
+                headers: {
+                    authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+                    apikey: SUPABASE_ANON_KEY,
+                    'x-upsert': 'true',
+                },
+                uploadDataDuringCreation: true,
+                chunkSize: 6 * 1024 * 1024,
+                metadata: {
+                    bucketName: BUCKET_NAME,
+                    objectName: storagePath,
+                    contentType: file.type || 'application/octet-stream',
+                    cacheControl: '3600',
+                },
+                onProgress: function (bytesUploaded, bytesTotal) {
+                    const percentage = ((bytesUploaded / bytesTotal) * 100).toFixed(1);
+                    
+                    const elapsedTime = (Date.now() - startTime) / 1000;
+                    const uploadSpeed = bytesUploaded / elapsedTime;
+                    const bytesRemaining = bytesTotal - bytesUploaded;
+                    const timeRemaining = uploadSpeed > 0 ? Math.ceil(bytesRemaining / uploadSpeed) : 0;
+
+                    const loadedMB = (bytesUploaded / (1024 * 1024)).toFixed(1);
+                    const totalMB = (bytesTotal / (1024 * 1024)).toFixed(1);
+                    const speedMB = (uploadSpeed / (1024 * 1024)).toFixed(2);
+
+                    progressBar.style.width = `${percentage}%`;
+                    percentText.textContent = `${percentage}%`;
+                    statusText.innerHTML = `${loadedMB}MB / ${totalMB}MB (${speedMB} MB/s) - Faltam ${timeRemaining}s`;
+                },
+                onError: function (error) {
+                    console.error("Erro no upload:", error);
+                    showToast('Erro ao enviar arquivo para o Storage.', '❌');
+                    progressWidget.style.display = 'none';
+                    estaFazendoUpload = false;
+                },
+                onSuccess: async function () {
+                    progressBar.style.width = '100%';
+                    percentText.textContent = '100%';
+                    statusText.innerHTML = `✔ Concluído!`;
+
+                    const { data: publicUrlData } = supabaseClient.storage
+                        .from(BUCKET_NAME)
+                        .getPublicUrl(storagePath);
+
+                    const filePublicUrl = publicUrlData ? publicUrlData.publicUrl : '';
+                    const dataAtual = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+
+                    await supabaseClient.from('arquivos').insert([{
+                        file_key: fileKey,
+                        name: file.name,
+                        date: dataAtual,
+                        origin: 'DN Curtanet',
+                        size_bytes: file.size,
+                        downloads: 0,
+                        url: filePublicUrl,
+                        storage_path: storagePath
+                    }]);
+
+                    estaFazendoUpload = false;
+                    if (fileInput) fileInput.value = '';
+
+                    carregarArquivosDaAba();
+                    atualizarBarraArmazenamento();
+
+                    setTimeout(() => { progressWidget.style.display = 'none'; }, 2000);
+                }
+            });
+
+            upload.start();
+        }
+
+        async function salvarNaDNCloud() {
+            const fileName = params.get('name') || 'arquivo.rar';
+            const fileSize = params.get('size') || '0 MB';
+            const fileKey = params.get('key') || 'file_' + Date.now();
+            const fileUrl = params.get('url') || '';
+
+            const dataAtual = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+
+            await supabaseClient.from('arquivos_salvados').insert([{
+                file_key: fileKey,
+                name: fileName,
+                date: dataAtual,
+                origin: 'Salvo via DN Curtanet',
+                size_bytes: 0,
+                downloads: 0,
+                url: fileUrl
+            }]);
+
+            const btn = document.getElementById('btnSalvarDN');
+            btn.textContent = '✔ Salvo no DN Curtanet!';
+            btn.style.backgroundColor = '#23a55a';
+            showToast('Arquivo salvo no seu painel!', '☁️');
+        }
+
+        function abrirModalLink(nome, tamanho, key, urlDirect) {
+            if (estaFazendoUpload) return showToast('Aguarde o upload terminar.', '', true);
+
+            const urlBase = window.location.origin + window.location.pathname;
+            let urlFinal = `${urlBase}?download=1&name=${encodeURIComponent(nome)}&size=${encodeURIComponent(tamanho)}&key=${key}`;
+            
+            if (urlDirect && urlDirect !== 'undefined') {
+                urlFinal += `&url=${urlDirect}`;
+            }
+
+            document.getElementById('linkField').value = urlFinal;
+            document.getElementById('linkField').classList.remove('revealed');
+            
+            const btnCopy = document.getElementById('btnCopy');
+            btnCopy.textContent = "Copiar link";
+            btnCopy.style.backgroundColor = "var(--accent-blue)";
+            document.getElementById('modalOverlay').style.display = 'flex';
+        }
+
+        function fecharModal() { document.getElementById('modalOverlay').style.display = 'none'; }
+        function revelarLink(input) { input.classList.add('revealed'); }
+
+        function copiarLinkDoCampo() {
+            const linkField = document.getElementById('linkField');
+            navigator.clipboard.writeText(linkField.value);
+            linkField.classList.add('revealed');
+            
+            const btnCopy = document.getElementById('btnCopy');
+            btnCopy.textContent = "Copiado!";
+            btnCopy.style.backgroundColor = "#23a55a";
+            showToast('Link copiado para a área de transferência!', '📋');
+        }
+
+        async function registrarDownloadContador(fileKey) {
+            for (const tabela of ['arquivos', 'arquivos_salvos']) {
+                const { data } = await supabaseClient.from(tabela).select('downloads').eq('file_key', fileKey).single();
+                if (data) {
+                    await supabaseClient.from(tabela).update({ downloads: (data.downloads || 0) + 1 }).eq('file_key', fileKey);
+                }
+            }
+        }
+
+        async function fazerDownload() {
+            const fileKey = params.get('key');
+            const fileUrlParam = params.get('url');
+            const fileName = params.get('name') || 'download.zip';
+
+            showToast('Iniciando download...', '📥', true);
+            if (fileKey) registrarDownloadContador(fileKey);
+
+            if (fileUrlParam) {
+                const link = document.createElement('a');
+                link.href = decodeURIComponent(fileUrlParam);
+                link.download = fileName;
+                link.target = '_blank';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                showToast('Download concluído!', '✅');
+                return;
+            }
+
+            showToast('URL do arquivo não encontrada.', '❌');
+        }
+    </script>
+</body>
+</html>
