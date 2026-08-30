@@ -1,103 +1,72 @@
 const express = require('express');
-const multer = require('multer');
 const { google } = require('googleapis');
-const cors = require('cors');
-const fs = require('fs');
+const multer = require('multer');
+const stream = require('stream');
 const path = require('path');
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+const upload = multer({ storage: multer.memoryStorage() });
 
-// ADICIONE ESTA LINHA ABAIXO para servir o seu site.html na página principal:
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'site.html'));
-});
+// ID da sua pasta do Google Drive (Cole o seu ID aqui entre as aspas)
+const FOLDER_ID = '1jHRAPNRA3-5hyy5CiJXLw3JZKgE5rVx1';
 
-const upload = multer({ dest: 'uploads/' });
+function getDriveService() {
+    if (!process.env.GOOGLE_CREDENTIALS) {
+        throw new Error('A variável de ambiente GOOGLE_CREDENTIALS não está configurada.');
+    }
 
-const KEY_FILE_PATH = path.join(__dirname, 'meu-serve-507114-05d64464b7ac.json');
-const SCOPES = ['https://www.googleapis.com/auth/drive.file'];
+    const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
 
-const auth = new google.auth.GoogleAuth({
-    keyFile: KEY_FILE_PATH,
-    scopes: SCOPES,
-});
+    const auth = new google.auth.GoogleAuth({
+        credentials,
+        scopes: ['https://www.googleapis.com/auth/drive.file']
+    });
 
-const drive = google.drive({ version: 'v3', auth });
-const PASTA_DESTINO_ID = ''; 
+    return google.drive({ version: 'v3', auth });
+}
 
+app.use(express.static(__dirname));
+
+// Rota de Upload
 app.post('/upload', upload.single('file'), async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
         }
 
-        const filePath = req.file.path;
-        const fileName = req.file.originalname;
-        const mimeType = req.file.mimetype;
+        const drive = getDriveService();
 
-        const fileMetadata = { name: fileName };
-        if (PASTA_DESTINO_ID) {
-            fileMetadata.parents = [PASTA_DESTINO_ID];
-        }
+        const bufferStream = new stream.PassThrough();
+        bufferStream.end(req.file.buffer);
+
+        const fileMetadata = {
+            name: req.file.originalname,
+            parents: [FOLDER_ID]
+        };
 
         const media = {
-            mimeType: mimeType,
-            body: fs.createReadStream(filePath),
+            mimeType: req.file.mimetype,
+            body: bufferStream
         };
 
         const response = await drive.files.create({
             resource: fileMetadata,
             media: media,
-            fields: 'id, name, webViewLink, webContentLink, size',
+            fields: 'id, name, webViewLink'
         });
 
-        try {
-            await drive.permissions.create({
-                fileId: response.data.id,
-                requestBody: { role: 'reader', type: 'anyone' },
-            });
-        } catch (permError) {
-            console.log('Aviso ao definir permissão:', permError.message);
-        }
-
-        fs.unlinkSync(filePath);
-
-        res.json({
-            success: true,
-            file: {
-                id: response.data.id,
-                name: response.data.name,
-                url: response.data.webContentLink || response.data.webViewLink,
-                size: req.file.size
-            }
+        res.status(200).json({
+            message: 'Arquivo enviado com sucesso para o Google Drive!',
+            file: response.data
         });
 
     } catch (error) {
         console.error('Erro no upload:', error);
-        res.status(500).json({ error: 'Erro interno ao enviar para o Google Drive.' });
-    }
-});
-
-app.get('/files', async (req, res) => {
-    try {
-        const response = await drive.files.list({
-            pageSize: 50,
-            fields: 'files(id, name, webViewLink, webContentLink, size)',
-        });
-        
-        res.json({
-            success: true,
-            files: response.data.files
-        });
-    } catch (error) {
-        console.error('Erro ao listar:', error);
-        res.status(500).json({ error: 'Erro ao buscar arquivos.' });
+        res.status(500).json({ error: 'Erro ao enviar arquivo para o Storage: ' + error.message });
     }
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`🚀 Servidor rodando na porta ${PORT}`);
+    console.log(`Servidor rodando na porta ${PORT}`);
 });
